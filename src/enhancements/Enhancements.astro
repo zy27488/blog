@@ -1,0 +1,741 @@
+---
+import { enhancementConfig } from "./config";
+
+const { enableAll, showControlPanel, modules } = enhancementConfig;
+---
+
+{enableAll && (
+	<>
+		<!-- 4. 霞鹜文楷屏幕阅读版 CDN 字体（仅在启用时按需加载） -->
+		<link
+			id="enh-font-link"
+			rel="stylesheet"
+			href="https://npm.elemecdn.com/lxgw-wenkai-screen-webfont/style.css"
+			media="print"
+			onload="this.media='all'"
+		/>
+
+		<!-- 5. 顶部流光阅读进度条 -->
+		<div id="enh-reading-progress" aria-hidden="true"></div>
+
+		<!-- 2. 双态环境粒子画布（浅色落樱 / 深色星尘） -->
+		<canvas id="enh-ambient-canvas" aria-hidden="true"></canvas>
+
+		<!-- 左下角可拆卸「✨ 幻境控制台」 -->
+		{showControlPanel && (
+			<div id="enh-studio-root" class="fixed bottom-5 left-5 z-[90] select-none">
+				<button
+					id="enh-studio-btn"
+					type="button"
+					title="美化插件开关 (可随时拆卸)"
+					class="group flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-medium transition-all duration-300 shadow-lg border border-white/20 dark:border-white/10 bg-white/75 dark:bg-zinc-900/75 backdrop-blur-md text-zinc-700 dark:text-zinc-200 hover:scale-105 active:scale-95"
+				>
+					<span class="inline-block transition-transform duration-500 group-hover:rotate-180 text-sm">✨</span>
+					<span class="hidden sm:inline">幻境组件</span>
+				</button>
+
+				<div
+					id="enh-studio-panel"
+					class="enh-panel-hidden absolute bottom-12 left-0 w-72 p-4 rounded-2xl shadow-2xl border border-white/30 dark:border-white/10 bg-white/85 dark:bg-zinc-900/85 backdrop-blur-xl text-zinc-800 dark:text-zinc-100 transition-all duration-300 origin-bottom-left"
+				>
+					<div class="flex items-center justify-between pb-2.5 mb-3 border-b border-zinc-200/70 dark:border-zinc-700/60">
+						<div>
+							<div class="text-xs font-bold tracking-wide text-[var(--primary)]">✦ 模块化美化插件箱</div>
+							<div class="text-[11px] text-zinc-500 dark:text-zinc-400">独立挂载 · 随时拆卸 · 零侵入本体</div>
+						</div>
+						<button
+							id="enh-toggle-all"
+							type="button"
+							class="text-[11px] px-2 py-1 rounded-md bg-[var(--btn-regular-bg)] text-[var(--btn-content)] hover:opacity-90 transition"
+						>
+							全部切换
+						</button>
+					</div>
+
+					<div class="space-y-2 text-xs">
+						<label class="flex items-center justify-between py-1 cursor-pointer hover:opacity-80">
+							<span>🌸 灵动横幅 & 打字机标语</span>
+							<input type="checkbox" data-enh-toggle="heroBanner" class="enh-switch" />
+						</label>
+						<label class="flex items-center justify-between py-1 cursor-pointer hover:opacity-80">
+							<span>🌌 双态粒子 (浅色落樱/深色星尘)</span>
+							<input type="checkbox" data-enh-toggle="ambientCanvas" class="enh-switch" />
+						</label>
+						<label class="flex items-center justify-between py-1 cursor-pointer hover:opacity-80">
+							<span>🔮 卡片 3D 磁吸流光聚光灯</span>
+							<input type="checkbox" data-enh-toggle="cardSpotlight" class="enh-switch" />
+						</label>
+						<label class="flex items-center justify-between py-1 cursor-pointer hover:opacity-80">
+							<span>🖋️ 霞鹜文楷 & 毛玻璃精修</span>
+							<input type="checkbox" data-enh-toggle="glassTypography" class="enh-switch" />
+						</label>
+						<label class="flex items-center justify-between py-1 cursor-pointer hover:opacity-80">
+							<span>⚡ 顶部流光进度 & 星芒点击</span>
+							<input type="checkbox" data-enh-toggle="cursorAndProgress" class="enh-switch" />
+						</label>
+						<label class="flex items-center justify-between py-1 cursor-pointer hover:opacity-80">
+							<span>⏳ 页脚跨次元计时 & 萌ICP备</span>
+							<input type="checkbox" data-enh-toggle="footerCapsule" class="enh-switch" />
+						</label>
+					</div>
+				</div>
+			</div>
+		)}
+
+		<script is:inline define:vars={{ defaultModules: modules }}>
+			(function () {
+				const STORAGE_KEY = "zy_blog_enhancements_v1";
+				let saved = {};
+				try {
+					saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+				} catch (_) {}
+
+				const state = {
+					heroBanner: saved.heroBanner ?? defaultModules.heroBanner.enable,
+					ambientCanvas: saved.ambientCanvas ?? defaultModules.ambientCanvas.enable,
+					cardSpotlight: saved.cardSpotlight ?? defaultModules.cardSpotlight.enable,
+					glassTypography: saved.glassTypography ?? defaultModules.glassTypography.enable,
+					cursorAndProgress: saved.cursorAndProgress ?? defaultModules.cursorAndProgress.enable,
+					footerCapsule: saved.footerCapsule ?? defaultModules.footerCapsule.enable,
+				};
+
+				function applyAttributes() {
+					const root = document.documentElement;
+					Object.keys(state).forEach((k) => {
+						root.setAttribute("data-enh-" + k.toLowerCase(), state[k] ? "true" : "false");
+					});
+					try {
+						localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+					} catch (_) {}
+				}
+				applyAttributes();
+
+				// --- 1. Hero Banner Overlay & Typewriter ---
+				let typewriterTimer = null;
+				function isHomeRoute() {
+					const p = window.location.pathname.replace(/\/+$/, "");
+					return p === "" || p === "/blog";
+				}
+
+				function mountHeroOverlay() {
+					const wrapper = document.getElementById("banner-wrapper");
+					if (!wrapper) return;
+
+					let hero = document.getElementById("enh-hero-overlay");
+					if (!hero) {
+						hero = document.createElement("div");
+						hero.id = "enh-hero-overlay";
+						hero.innerHTML = `
+							<div class="enh-hero-inner">
+								<div class="enh-hero-badge">${defaultModules.heroBanner.badge}</div>
+								<h1 class="enh-hero-title">${defaultModules.heroBanner.title}</h1>
+								<div class="enh-hero-subtitle-wrap">
+									<span id="enh-typewriter-text"></span>
+									<span class="enh-typewriter-cursor">|</span>
+								</div>
+								<button type="button" id="enh-scroll-down" aria-label="Scroll to content" class="enh-scroll-btn">
+									<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+										<path d="M7 13l5 5 5-5M7 6l5 5 5-5"/>
+									</svg>
+								</button>
+							</div>
+						`;
+						wrapper.appendChild(hero);
+
+						const scrollBtn = hero.querySelector("#enh-scroll-down");
+						if (scrollBtn) {
+							scrollBtn.addEventListener("click", () => {
+								const grid = document.getElementById("main-grid");
+								if (grid) {
+									grid.scrollIntoView({ behavior: "smooth" });
+								}
+							});
+						}
+						startTypewriter();
+					}
+
+					hero.style.display = state.heroBanner && isHomeRoute() ? "flex" : "none";
+				}
+
+				function startTypewriter() {
+					if (typewriterTimer) clearTimeout(typewriterTimer);
+					const phrases = defaultModules.heroBanner.subtitles || [];
+					if (!phrases.length) return;
+
+					let phraseIdx = 0;
+					let charIdx = 0;
+					let deleting = false;
+
+					function tick() {
+						const el = document.getElementById("enh-typewriter-text");
+						if (!el) return;
+						const current = phrases[phraseIdx];
+						if (!deleting) {
+							charIdx++;
+							el.textContent = current.slice(0, charIdx);
+							if (charIdx >= current.length) {
+								deleting = true;
+								typewriterTimer = setTimeout(tick, 2400);
+								return;
+							}
+							typewriterTimer = setTimeout(tick, 85);
+						} else {
+							charIdx--;
+							el.textContent = current.slice(0, charIdx);
+							if (charIdx <= 0) {
+								deleting = false;
+								phraseIdx = (phraseIdx + 1) % phrases.length;
+								typewriterTimer = setTimeout(tick, 350);
+								return;
+							}
+							typewriterTimer = setTimeout(tick, 40);
+						}
+					}
+					tick();
+				}
+
+				// --- 2. Dual-Mode Ambient Canvas (Sakura in Light / Stardust in Dark) ---
+				function initAmbientCanvas() {
+					const canvas = document.getElementById("enh-ambient-canvas");
+					if (!canvas || canvas.dataset.init === "1") return;
+					canvas.dataset.init = "1";
+					const ctx = canvas.getContext("2d");
+					let width = (canvas.width = window.innerWidth);
+					let height = (canvas.height = window.innerHeight);
+
+					window.addEventListener("resize", () => {
+						width = canvas.width = window.innerWidth;
+						height = canvas.height = window.innerHeight;
+					});
+
+					const count = Math.min(38, Math.floor(width / 38));
+					const particles = Array.from({ length: count }, () => ({
+						x: Math.random() * width,
+						y: Math.random() * height,
+						r: Math.random() * 2.8 + 1.4,
+						vx: (Math.random() - 0.5) * 0.55,
+						vy: Math.random() * 0.55 + 0.25,
+						angle: Math.random() * Math.PI * 2,
+						spin: (Math.random() - 0.5) * 0.02,
+						alpha: Math.random() * 0.55 + 0.25,
+					}));
+
+					let mouse = { x: -9999, y: -9999 };
+					window.addEventListener(
+						"mousemove",
+						(e) => {
+							mouse.x = e.clientX;
+							mouse.y = e.clientY;
+						},
+						{ passive: true }
+					);
+
+					function render() {
+						requestAnimationFrame(render);
+						if (!state.ambientCanvas || document.hidden) {
+							ctx.clearRect(0, 0, width, height);
+							return;
+						}
+						ctx.clearRect(0, 0, width, height);
+						const isDark = document.documentElement.classList.contains("dark");
+						const hue = getComputedStyle(document.documentElement).getPropertyValue("--hue").trim() || "250";
+
+						for (let i = 0; i < particles.length; i++) {
+							const p = particles[i];
+							p.angle += p.spin;
+
+							if (isDark) {
+								// Dark mode: gentle floating stardust + constellation lines
+								p.x += p.vx;
+								p.y -= p.vy * 0.45;
+								if (p.x < 0) p.x = width;
+								if (p.x > width) p.x = 0;
+								if (p.y < 0) p.y = height;
+
+								const twinkle = 0.35 + 0.35 * Math.sin(p.angle * 3);
+								ctx.beginPath();
+								ctx.arc(p.x, p.y, p.r * 0.85, 0, Math.PI * 2);
+								ctx.fillStyle = `oklch(0.82 0.14 ${hue} / ${twinkle})`;
+								ctx.fill();
+
+								const dx = p.x - mouse.x;
+								const dy = p.y - mouse.y;
+								const dist = Math.hypot(dx, dy);
+								if (dist < 140) {
+									ctx.beginPath();
+									ctx.moveTo(p.x, p.y);
+									ctx.lineTo(mouse.x, mouse.y);
+									ctx.strokeStyle = `oklch(0.78 0.14 ${hue} / ${(1 - dist / 140) * 0.28})`;
+									ctx.lineWidth = 0.8;
+									ctx.stroke();
+								}
+							} else {
+								// Light mode: drifting translucent sakura / light petals
+								p.x += Math.sin(p.angle) * 0.45 + 0.3;
+								p.y += p.vy * 0.85;
+								if (p.x > width + 20) p.x = -20;
+								if (p.y > height + 20) {
+									p.y = -15;
+									p.x = Math.random() * width;
+								}
+
+								ctx.save();
+								ctx.translate(p.x, p.y);
+								ctx.rotate(p.angle);
+								ctx.beginPath();
+								ctx.ellipse(0, 0, p.r * 2.1, p.r * 1.15, 0, 0, Math.PI * 2);
+								ctx.fillStyle = `oklch(0.82 0.11 ${hue} / ${p.alpha * 0.65})`;
+								ctx.fill();
+								ctx.restore();
+							}
+						}
+					}
+					requestAnimationFrame(render);
+				}
+
+				// --- 3. Card 3D Spotlight Effect ---
+				function initCardSpotlight() {
+					window.addEventListener(
+						"mousemove",
+						(e) => {
+							if (!state.cardSpotlight) return;
+							const cards = document.querySelectorAll(".card-base");
+							cards.forEach((card) => {
+								const rect = card.getBoundingClientRect();
+								if (
+									e.clientX >= rect.left - 80 &&
+									e.clientX <= rect.right + 80 &&
+									e.clientY >= rect.top - 80 &&
+									e.clientY <= rect.bottom + 80
+								) {
+									card.style.setProperty("--enh-mx", `${e.clientX - rect.left}px`);
+									card.style.setProperty("--enh-my", `${e.clientY - rect.top}px`);
+								}
+							});
+						},
+						{ passive: true }
+					);
+				}
+
+				// --- 5. Reading Progress & Click Stardust Ripple ---
+				function initCursorAndProgress() {
+					const bar = document.getElementById("enh-reading-progress");
+					function updateProgress() {
+						if (!bar || !state.cursorAndProgress) return;
+						const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+						const pct = docHeight > 0 ? Math.min(100, Math.max(0, (window.scrollY / docHeight) * 100)) : 0;
+						bar.style.width = pct + "%";
+					}
+					window.addEventListener("scroll", updateProgress, { passive: true });
+					updateProgress();
+
+					window.addEventListener("click", (e) => {
+						if (!state.cursorAndProgress) return;
+						if (e.target.closest("#enh-studio-root")) return;
+
+						const ring = document.createElement("div");
+						ring.className = "enh-click-ring";
+						ring.style.left = e.clientX + "px";
+						ring.style.top = e.clientY + "px";
+						document.body.appendChild(ring);
+
+						for (let i = 0; i < 6; i++) {
+							const spark = document.createElement("span");
+							spark.className = "enh-click-spark";
+							const angle = (Math.PI * 2 * i) / 6 + (Math.random() - 0.5) * 0.4;
+							const dist = 22 + Math.random() * 18;
+							spark.style.setProperty("--tx", `${Math.cos(angle) * dist}px`);
+							spark.style.setProperty("--ty", `${Math.sin(angle) * dist}px`);
+							ring.appendChild(spark);
+						}
+
+						setTimeout(() => ring.remove(), 650);
+					});
+				}
+
+				// --- 6. Footer Live Runtime Capsule ---
+				let footerInterval = null;
+				function mountFooterCapsule() {
+					const footers = document.querySelectorAll(".footer");
+					footers.forEach((footer) => {
+						if (footer.querySelector(".enh-footer-capsule")) return;
+						const box = document.createElement("div");
+						box.className = "enh-footer-capsule";
+						box.innerHTML = `
+							<span class="enh-footer-badge">✦ ${defaultModules.footerCapsule.icpText}</span>
+							<span class="enh-footer-sep">·</span>
+							<span class="enh-footer-timer">次元观测中...</span>
+						`;
+						footer.appendChild(box);
+					});
+
+					if (!footerInterval) {
+						const startMs = new Date(defaultModules.footerCapsule.launchDate).getTime();
+						function updateClock() {
+							const diff = Math.max(0, Date.now() - startMs);
+							const days = Math.floor(diff / 86400000);
+							const hours = Math.floor((diff % 86400000) / 3600000);
+							const mins = Math.floor((diff % 3600000) / 60000);
+							const secs = Math.floor((diff % 60000) / 1000);
+							document.querySelectorAll(".enh-footer-timer").forEach((el) => {
+								el.textContent = `已跨越次元运行 ${days} 天 ${hours} 小时 ${mins} 分 ${secs} 秒`;
+							});
+						}
+						updateClock();
+						footerInterval = setInterval(updateClock, 1000);
+					}
+				}
+
+				// --- Control Panel UI Binding ---
+				function initControlPanel() {
+					const btn = document.getElementById("enh-studio-btn");
+					const panel = document.getElementById("enh-studio-panel");
+					const toggleAllBtn = document.getElementById("enh-toggle-all");
+					if (!btn || !panel) return;
+
+					const inputs = panel.querySelectorAll("input[data-enh-toggle]");
+					function syncCheckboxes() {
+						inputs.forEach((input) => {
+							const key = input.getAttribute("data-enh-toggle");
+							input.checked = !!state[key];
+						});
+					}
+					syncCheckboxes();
+
+					btn.addEventListener("click", (e) => {
+						e.stopPropagation();
+						panel.classList.toggle("enh-panel-hidden");
+					});
+
+					document.addEventListener("click", (e) => {
+						if (!e.target.closest("#enh-studio-root")) {
+							panel.classList.add("enh-panel-hidden");
+						}
+					});
+
+					inputs.forEach((input) => {
+						input.addEventListener("change", () => {
+							const key = input.getAttribute("data-enh-toggle");
+							state[key] = input.checked;
+							applyAttributes();
+							mountHeroOverlay();
+						});
+					});
+
+					if (toggleAllBtn) {
+						toggleAllBtn.addEventListener("click", () => {
+							const anyOn = Object.values(state).some(Boolean);
+							Object.keys(state).forEach((k) => {
+								state[k] = !anyOn;
+							});
+							syncCheckboxes();
+							applyAttributes();
+							mountHeroOverlay();
+						});
+					}
+				}
+
+				function boot() {
+					mountHeroOverlay();
+					initAmbientCanvas();
+					initCardSpotlight();
+					initCursorAndProgress();
+					mountFooterCapsule();
+					initControlPanel();
+				}
+
+				if (document.readyState === "loading") {
+					document.addEventListener("DOMContentLoaded", boot);
+				} else {
+					boot();
+				}
+
+				// Re-sync after Swup page navigation
+				document.addEventListener("swup:enable", () => {
+					window.swup.hooks.on("page:view", () => {
+						mountHeroOverlay();
+						mountFooterCapsule();
+					});
+				});
+				if (window.swup && window.swup.hooks) {
+					window.swup.hooks.on("page:view", () => {
+						mountHeroOverlay();
+						mountFooterCapsule();
+					});
+				}
+			})();
+		</script>
+
+		<style is:global>
+			/* =========================================================
+			   1. Hero Banner Overlay & Poetic Typewriter
+			   ========================================================= */
+			#enh-hero-overlay {
+				position: absolute;
+				inset: 0;
+				z-index: 20;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				pointer-events: none;
+				background: linear-gradient(
+					to bottom,
+					rgba(0, 0, 0, 0.18) 0%,
+					rgba(0, 0, 0, 0.36) 65%,
+					rgba(0, 0, 0, 0.52) 100%
+				);
+			}
+			html[data-enh-herobanner="false"] #enh-hero-overlay {
+				display: none !important;
+			}
+			.enh-hero-inner {
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				text-align: center;
+				padding: 1.5rem 1.75rem;
+				margin-top: 2rem;
+				max-width: 90vw;
+				animation: enh-fade-up 0.85s cubic-bezier(0.16, 1, 0.3, 1) both;
+			}
+			.enh-hero-badge {
+				font-size: 0.72rem;
+				letter-spacing: 0.22em;
+				text-transform: uppercase;
+				color: rgba(255, 255, 255, 0.92);
+				background: rgba(255, 255, 255, 0.14);
+				border: 1px solid rgba(255, 255, 255, 0.28);
+				backdrop-filter: blur(10px);
+				padding: 0.35rem 1rem;
+				border-radius: 9999px;
+				margin-bottom: 0.9rem;
+				box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
+			}
+			.enh-hero-title {
+				font-size: clamp(1.9rem, 4.2vw, 3.25rem);
+				font-weight: 800;
+				letter-spacing: 0.06em;
+				color: #ffffff;
+				text-shadow: 0 4px 24px rgba(0, 0, 0, 0.45), 0 0 40px oklch(0.7 0.18 var(--hue) / 0.45);
+				margin: 0 0 0.75rem 0;
+				line-height: 1.2;
+			}
+			.enh-hero-subtitle-wrap {
+				display: inline-flex;
+				align-items: center;
+				min-height: 2.1rem;
+				padding: 0.35rem 1.15rem;
+				border-radius: 9999px;
+				background: rgba(15, 15, 20, 0.42);
+				border: 1px solid rgba(255, 255, 255, 0.18);
+				backdrop-filter: blur(12px);
+				color: rgba(255, 255, 255, 0.95);
+				font-size: clamp(0.88rem, 1.6vw, 1.05rem);
+				letter-spacing: 0.04em;
+			}
+			.enh-typewriter-cursor {
+				display: inline-block;
+				margin-left: 4px;
+				color: oklch(0.8 0.16 var(--hue));
+				font-weight: 700;
+				animation: enh-blink 1s step-end infinite;
+			}
+			.enh-scroll-btn {
+				pointer-events: auto;
+				margin-top: 1.25rem;
+				width: 2.4rem;
+				height: 2.4rem;
+				border-radius: 9999px;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				color: rgba(255, 255, 255, 0.9);
+				background: rgba(255, 255, 255, 0.14);
+				border: 1px solid rgba(255, 255, 255, 0.25);
+				backdrop-filter: blur(8px);
+				cursor: pointer;
+				transition: all 0.25s ease;
+				animation: enh-float 2.4s ease-in-out infinite;
+			}
+			.enh-scroll-btn:hover {
+				background: oklch(0.7 0.15 var(--hue) / 0.55);
+				transform: scale(1.1);
+			}
+
+			/* =========================================================
+			   2. Ambient Canvas
+			   ========================================================= */
+			#enh-ambient-canvas {
+				position: fixed;
+				inset: 0;
+				width: 100vw;
+				height: 100vh;
+				pointer-events: none;
+				z-index: 25;
+			}
+			html[data-enh-ambientcanvas="false"] #enh-ambient-canvas {
+				display: none !important;
+			}
+
+			/* =========================================================
+			   3. Card 3D Spotlight & Hover Elevation
+			   ========================================================= */
+			html[data-enh-cardspotlight="true"] .card-base {
+				position: relative;
+				transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+					box-shadow 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+					border-color 0.35s ease !important;
+			}
+			html[data-enh-cardspotlight="true"] .card-base::after {
+				content: "";
+				position: absolute;
+				inset: 0;
+				border-radius: inherit;
+				pointer-events: none;
+				background: radial-gradient(
+					420px circle at var(--enh-mx, -999px) var(--enh-my, -999px),
+					oklch(0.75 0.15 var(--hue) / 0.13),
+					transparent 65%
+				);
+				opacity: 0;
+				transition: opacity 0.35s ease;
+				z-index: 2;
+			}
+			html[data-enh-cardspotlight="true"] .card-base:hover::after {
+				opacity: 1;
+			}
+			html[data-enh-cardspotlight="true"] #swup-container .card-base:hover {
+				transform: translateY(-3px);
+				box-shadow: 0 14px 34px -10px oklch(0.55 0.16 var(--hue) / 0.18);
+			}
+
+			/* =========================================================
+			   4. LXGW WenKai Typography & Frosted Glass UI
+			   ========================================================= */
+			html[data-enh-glasstypography="true"] body {
+				font-family: "LXGW WenKai Screen", "Roboto", system-ui, -apple-system, sans-serif;
+			}
+			html[data-enh-glasstypography="true"] .card-base {
+				backdrop-filter: blur(16px) saturate(150%);
+				-webkit-backdrop-filter: blur(16px) saturate(150%);
+				border: 1px solid oklch(0.75 0.08 var(--hue) / 0.16);
+			}
+			html.dark[data-enh-glasstypography="true"] .card-base {
+				border: 1px solid oklch(0.75 0.1 var(--hue) / 0.14);
+			}
+
+			/* =========================================================
+			   5. Reading Progress Bar & Click Stardust
+			   ========================================================= */
+			#enh-reading-progress {
+				position: fixed;
+				top: 0;
+				left: 0;
+				height: 3px;
+				width: 0%;
+				z-index: 100;
+				pointer-events: none;
+				background: linear-gradient(
+					90deg,
+					oklch(0.68 0.18 var(--hue)),
+					oklch(0.8 0.16 calc(var(--hue) + 40))
+				);
+				box-shadow: 0 0 12px oklch(0.72 0.18 var(--hue) / 0.8);
+				transition: width 0.12s ease-out;
+			}
+			html[data-enh-cursorandprogress="false"] #enh-reading-progress {
+				display: none !important;
+			}
+			.enh-click-ring {
+				position: fixed;
+				width: 10px;
+				height: 10px;
+				margin-left: -5px;
+				margin-top: -5px;
+				border-radius: 9999px;
+				border: 1.5px solid oklch(0.72 0.16 var(--hue));
+				pointer-events: none;
+				z-index: 9999;
+				animation: enh-ring-expand 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+			}
+			.enh-click-spark {
+				position: absolute;
+				left: 50%;
+				top: 50%;
+				width: 4px;
+				height: 4px;
+				margin-left: -2px;
+				margin-top: -2px;
+				border-radius: 9999px;
+				background: oklch(0.76 0.18 var(--hue));
+				box-shadow: 0 0 6px oklch(0.76 0.18 var(--hue));
+				animation: enh-spark-fly 0.58s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+			}
+
+			/* =========================================================
+			   6. Footer Capsule
+			   ========================================================= */
+			.enh-footer-capsule {
+				display: flex;
+				flex-wrap: wrap;
+				align-items: center;
+				justify-content: center;
+				gap: 0.5rem;
+				margin: 0.25rem auto 1.25rem auto;
+				padding: 0.45rem 1.1rem;
+				width: fit-content;
+				border-radius: 9999px;
+				font-size: 0.78rem;
+				background: var(--card-bg);
+				border: 1px solid oklch(0.72 0.12 var(--hue) / 0.22);
+				color: oklch(0.55 0.04 var(--hue));
+				box-shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.06);
+			}
+			html.dark .enh-footer-capsule {
+				color: oklch(0.78 0.04 var(--hue));
+			}
+			.enh-footer-badge {
+				font-weight: 600;
+				color: var(--primary);
+			}
+			html[data-enh-footercapsule="false"] .enh-footer-capsule {
+				display: none !important;
+			}
+
+			/* =========================================================
+			   Control Panel & Keyframes
+			   ========================================================= */
+			.enh-panel-hidden {
+				opacity: 0;
+				pointer-events: none;
+				transform: translateY(8px) scale(0.95);
+			}
+			.enh-switch {
+				accent-color: oklch(0.68 0.16 var(--hue));
+				width: 15px;
+				height: 15px;
+				cursor: pointer;
+			}
+			@keyframes enh-blink {
+				0%, 100% { opacity: 1; }
+				50% { opacity: 0; }
+			}
+			@keyframes enh-float {
+				0%, 100% { transform: translateY(0); }
+				50% { transform: translateY(6px); }
+			}
+			@keyframes enh-fade-up {
+				from { opacity: 0; transform: translateY(14px); }
+				to { opacity: 1; transform: translateY(0); }
+			}
+			@keyframes enh-ring-expand {
+				0% { transform: scale(0.5); opacity: 0.95; }
+				100% { transform: scale(4.2); opacity: 0; }
+			}
+			@keyframes enh-spark-fly {
+				0% { transform: translate(0, 0) scale(1); opacity: 1; }
+				100% { transform: translate(var(--tx), var(--ty)) scale(0.2); opacity: 0; }
+			}
+		</style>
+	</>
+)}
