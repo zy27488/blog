@@ -4,7 +4,7 @@
 
 这里主要记录互联网、科技、Geek 折腾、二次元文化与文学随笔。
 
-::github{repo="zy27488/zy27488.github.io"}
+::github{repo="zy27488/blog"}
 
 ### 站点技术栈
 - 框架：[Astro](https://astro.build/)
